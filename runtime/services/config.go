@@ -108,18 +108,25 @@ func setValue(field reflect.Value, value string) error {
 		field.SetString(value)
 
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		intValue, err := strconv.ParseInt(value, 10, 64)
+		intValue, err := strconv.ParseInt(value, 10, field.Type().Bits())
 		if err != nil {
 			return fmt.Errorf("failed to convert %s to int: %v", value, err)
 		}
 		field.SetInt(int64(intValue))
 
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		uintValue, err := strconv.ParseUint(value, 10, 64)
+		uintValue, err := strconv.ParseUint(value, 10, field.Type().Bits())
 		if err != nil {
 			return fmt.Errorf("failed to convert %s to uint: %v", value, err)
 		}
 		field.SetUint(uint64(uintValue))
+
+	case reflect.Float32, reflect.Float64:
+		floatValue, err := strconv.ParseFloat(value, field.Type().Bits())
+		if err != nil {
+			return fmt.Errorf("failed to convert %s to float: %v", value, err)
+		}
+		field.SetFloat(floatValue)
 
 	case reflect.Bool:
 		boolValue, err := strconv.ParseBool(value)
