@@ -19,8 +19,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
-	"github.com/tim-oster/bespoke/runtime/slogctx"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/tim-oster/bespoke/runtime/slogctx"
 )
 
 func Run(name string, fn func(b *Bootstrapper) error) {
@@ -83,9 +83,12 @@ func Run(name string, fn func(b *Bootstrapper) error) {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	for _, server := range b.servers {
+	for port, server := range b.servers {
 		if err := server.Shutdown(shutdownCtx); err != nil {
-			slogFatal("server shutdown failed", err)
+			slog.Warn("graceful shutdown failed - shutting down forcefully", "error", err, "port", port)
+			if err := server.Close(); err != nil {
+				slog.Warn("forceful shutdown failed", "error", err, "port", port)
+			}
 		}
 	}
 
