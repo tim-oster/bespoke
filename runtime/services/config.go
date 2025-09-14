@@ -71,6 +71,8 @@ func (l *configLoader) loadConfig(dst any, pathPrefix []string) error {
 		value := defaultTag
 
 		if envTag != "" {
+			var readSecret bool
+
 			if l.secretsMountPath != "" {
 				secretPath := strings.ToLower(strings.Join(append(pathPrefix, envTag), "/"))
 				raw, err := os.ReadFile(path.Join(l.secretsMountPath, secretPath))
@@ -79,13 +81,14 @@ func (l *configLoader) loadConfig(dst any, pathPrefix []string) error {
 				}
 				if err == nil {
 					value = string(raw)
+					readSecret = true
 				}
 			}
 
 			envName := strings.ToUpper(strings.Join(append(pathPrefix, envTag), "_"))
 			if newValue, ok := os.LookupEnv(envName); ok {
 				value = newValue
-			} else if !hasDefault {
+			} else if !hasDefault && !readSecret {
 				return fmt.Errorf("missing env variable: %s", envName)
 			}
 		}
