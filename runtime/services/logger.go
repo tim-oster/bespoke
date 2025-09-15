@@ -7,14 +7,14 @@ import (
 	"github.com/tim-oster/bespoke/runtime/slogctx"
 )
 
-func newLogger(level slog.Level) *slog.Logger {
+func newLogger(level slog.Level, attrReplacer func(groups []string, a slog.Attr) slog.Attr) *slog.Logger {
 	levelVar := new(slog.LevelVar)
 	levelVar.Set(level)
 
 	h := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		AddSource:   false,
 		Level:       levelVar,
-		ReplaceAttr: nil,
+		ReplaceAttr: attrReplacer,
 	})
 	return slog.New(slogctx.NewHandler(h))
 }

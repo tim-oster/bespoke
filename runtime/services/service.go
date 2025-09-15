@@ -4,10 +4,12 @@ import (
 	"cmp"
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"maps"
 	"net"
 	"net/http"
+	"net/http/pprof"
 	"os"
 	"os/signal"
 	"slices"
@@ -19,19 +21,62 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
+	"github.com/go-chi/httplog/v3"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/tim-oster/bespoke/runtime/slogctx"
+	"go.opentelemetry.io/otel/exporters/prometheus"
+	"go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/resource"
+	semconv "go.opentelemetry.io/otel/semconv/v1.19.0"
 )
 
+type otelConfig struct {
+	name           string
+	metricProvider *metric.MeterProvider
+}
+
+func makeOTelConfig(name string) (otelConfig, error) {
+	appResource, err := resource.Merge(
+		resource.Default(),
+		resource.NewWithAttributes(
+			"",
+			semconv.ServiceNameKey.String(name),
+		),
+	)
+	if err != nil {
+		return otelConfig{}, fmt.Errorf("failed to create otel resource: %w", err)
+	}
+
+	metricExporter, err := prometheus.New()
+	if err != nil {
+		return otelConfig{}, fmt.Errorf("failed to create otel prometheus meter provider: %w", err)
+	}
+	meterProvider := metric.NewMeterProvider(metric.WithReader(metricExporter), metric.WithResource(appResource))
+
+	return otelConfig{
+		name:           name,
+		metricProvider: meterProvider,
+	}, nil
+}
+
 func Run(name string, fn func(b *Bootstrapper) error) {
-	logger := newLogger(getLogLevel()).With(slog.String("service", name))
+	logFormat := httplog.SchemaGCP.Concise(false)
+	logger := newLogger(getLogLevel(), logFormat.ReplaceAttr).With(slog.String("service", name))
 	slog.SetDefault(logger)
 
 	slog.Info("starting service...")
 
-	b := &Bootstrapper{}
+	otelConfig, err := makeOTelConfig(name)
+	if err != nil {
+		slogFatal("failed to create otel config", err)
+	}
 
-	err := fn(b)
+	b := &Bootstrapper{
+		logger:     logger,
+		otelConfig: otelConfig,
+	}
+
+	err = fn(b)
 	if err != nil {
 		slogFatal("failed to start service", err)
 	}
@@ -135,6 +180,8 @@ func runJob(ctx context.Context, name string, interval time.Duration, fn func(co
 }
 
 type Bootstrapper struct {
+	logger      *slog.Logger
+	otelConfig  otelConfig
 	servers     map[int]*http.Server
 	jobs        map[string]job
 	startupJobs []job
@@ -147,9 +194,28 @@ type job struct {
 	fn       func(context.Context) error
 }
 
-func NewRouter(corsOptions cors.Options) *chi.Mux {
+func (b *Bootstrapper) Logger() *slog.Logger {
+	return b.logger
+}
+
+func (b *Bootstrapper) MeterProvider() *metric.MeterProvider {
+	return b.otelConfig.metricProvider
+}
+
+func NewRouter(logger *slog.Logger, corsOptions cors.Options) *chi.Mux {
+	isDebugHeaderSet := func(r *http.Request) bool {
+		return r.Header.Get("Debug") == "body"
+	}
+
 	r := chi.NewRouter()
-	r.Use(middleware.Logger)
+	r.Use(httplog.RequestLogger(logger, &httplog.Options{
+		Level:             slog.LevelInfo,
+		Schema:            httplog.SchemaGCP.Concise(false),
+		RecoverPanics:     true,
+		LogRequestHeaders: []string{"Origin"},
+		LogRequestBody:    isDebugHeaderSet,
+		LogResponseBody:   isDebugHeaderSet,
+	}))
 	r.Use(middleware.RequestSize(100 << 10)) // 100 KB
 	r.Use(cors.New(corsOptions).Handler)
 	return r
@@ -177,7 +243,19 @@ func (b *Bootstrapper) AddServer(srv *http.Server) {
 func (b *Bootstrapper) addDebugServer() {
 	debugPort := cmp.Or(os.Getenv("DEBUG_PORT"), "6060")
 	debugMux := http.NewServeMux()
-	debugMux.Handle("/metrics", promhttp.Handler())
+
+	debugMux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	debugMux.Handle("GET /metrics", promhttp.Handler())
+
+	debugMux.HandleFunc("GET /debug/pprof/", pprof.Index)
+	debugMux.HandleFunc("GET /debug/pprof/cmdline", pprof.Cmdline)
+	debugMux.HandleFunc("GET /debug/pprof/profile", pprof.Profile)
+	debugMux.HandleFunc("GET /debug/pprof/symbol", pprof.Symbol)
+	debugMux.HandleFunc("GET /debug/pprof/trace", pprof.Trace)
+
 	b.AddServer(&http.Server{Addr: ":" + debugPort, Handler: debugMux})
 }
 
