@@ -20,8 +20,8 @@ func (h *handler) Enabled(ctx context.Context, level slog.Level) bool {
 }
 
 func (h *handler) Handle(ctx context.Context, r slog.Record) error {
-	if attrs := Get(ctx); len(attrs) > 0 {
-		r.AddAttrs(attrs...)
+	if attrs := Get(ctx); attrs != nil && len(*attrs) > 0 {
+		r.AddAttrs(*attrs...)
 	}
 	return h.handler.Handle(ctx, r)
 }
@@ -38,17 +38,22 @@ type contextKey string
 
 var attrContextKey = contextKey("attrs")
 
+func PrepareContext(ctx context.Context) context.Context {
+	return context.WithValue(ctx, attrContextKey, &[]slog.Attr{})
+}
+
 func With(ctx context.Context, attrs ...slog.Attr) context.Context {
 	existing := Get(ctx)
 	if existing == nil {
-		existing = make([]slog.Attr, 0, len(attrs))
+		existing = &[]slog.Attr{}
+		ctx = context.WithValue(ctx, attrContextKey, existing)
 	}
-	existing = append(existing, attrs...)
-	return context.WithValue(ctx, attrContextKey, existing)
+	*existing = append(*existing, attrs...)
+	return ctx
 }
 
-func Get(ctx context.Context) []slog.Attr {
-	attrs, ok := ctx.Value(attrContextKey).([]slog.Attr)
+func Get(ctx context.Context) *[]slog.Attr {
+	attrs, ok := ctx.Value(attrContextKey).(*[]slog.Attr)
 	if !ok {
 		return nil
 	}
