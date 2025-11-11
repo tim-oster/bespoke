@@ -21,6 +21,13 @@ func WithFileLoader(path string) Option {
 	}
 }
 
+func WithEnvPrefix(prefix string) Option {
+	return func(loader *configLoader) error {
+		loader.envPrefix = prefix
+		return nil
+	}
+}
+
 func LoadConfig(dst any, opts ...Option) error {
 	var loader configLoader
 	for _, opt := range opts {
@@ -33,6 +40,7 @@ func LoadConfig(dst any, opts ...Option) error {
 
 type configLoader struct {
 	secretsMountPath string
+	envPrefix        string
 }
 
 func (l *configLoader) loadConfig(dst any, pathPrefix []string) error {
@@ -86,7 +94,7 @@ func (l *configLoader) loadConfig(dst any, pathPrefix []string) error {
 			}
 
 			envName := strings.ToUpper(strings.Join(append(pathPrefix, envTag), "_"))
-			if newValue, ok := os.LookupEnv(envName); ok {
+			if newValue, ok := os.LookupEnv(l.envPrefix + envName); ok {
 				value = newValue
 			} else if !hasDefault && !readSecret {
 				return fmt.Errorf("missing env variable: %s", envName)
