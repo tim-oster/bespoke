@@ -202,18 +202,26 @@ func (b *Bootstrapper) MeterProvider() *metric.MeterProvider {
 	return b.otelConfig.metricProvider
 }
 
+type contextKey string
+
+var contextKeyOriginalContext = contextKey("originalContext")
+
 func NewRouter(logger *slog.Logger, corsOptions cors.Options) *chi.Mux {
 	isDebugHeaderSet := func(r *http.Request) bool {
-		return r.Header.Get("Debug") == "body"
+		val := r.Header.Get("Debug")
+		return val == "body" || val == "all" || val == "1"
 	}
 
 	r := chi.NewRouter()
 	r.Use(func(h http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			originalContext := r.Context()
 			ctx := slogctx.PrepareContext(r.Context())
+			ctx = context.WithValue(ctx, contextKeyOriginalContext, originalContext)
 			h.ServeHTTP(w, r.WithContext(ctx))
 		})
 	})
+
 	r.Use(httplog.RequestLogger(logger, &httplog.Options{
 		Level:             slog.LevelInfo,
 		Schema:            httplog.SchemaGCP.Concise(false),
@@ -225,6 +233,17 @@ func NewRouter(logger *slog.Logger, corsOptions cors.Options) *chi.Mux {
 	r.Use(middleware.RequestSize(100 << 10)) // 100 KB
 	r.Use(cors.New(corsOptions).Handler)
 	return r
+}
+
+func IsClientCanceled(ctx context.Context) bool {
+	originalContext, ok := ctx.Value(contextKeyOriginalContext).(context.Context)
+	if !ok {
+		return false
+	}
+	if errors.Is(originalContext.Err(), context.Canceled) {
+		return true
+	}
+	return false
 }
 
 func (b *Bootstrapper) AddServer(srv *http.Server) {
