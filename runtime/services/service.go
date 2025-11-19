@@ -226,7 +226,7 @@ func NewRouter(logger *slog.Logger, corsOptions cors.Options) *chi.Mux {
 		Level:             slog.LevelInfo,
 		Schema:            httplog.SchemaGCP.Concise(false),
 		RecoverPanics:     true,
-		LogRequestHeaders: []string{"Origin"},
+		LogRequestHeaders: []string{"Origin", "Content-Type", "Debug", "Cf-Ipcountry", "Cf-Client-Ip", "User-Agent", "Accept-Language"},
 		LogRequestBody:    isDebugHeaderSet,
 		LogResponseBody:   isDebugHeaderSet,
 	}))
