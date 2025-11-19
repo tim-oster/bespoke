@@ -66,7 +66,7 @@ func (l *configLoader) loadConfig(dst any, pathPrefix []string) error {
 			if field.Type.Kind() != reflect.Struct {
 				return fmt.Errorf("nested tag is only supported for struct fields: %s", field.Name)
 			}
-			if err := l.loadConfig(val.Field(i).Addr().Interface(), append(pathPrefix, field.Name)); err != nil {
+			if err := l.loadConfig(val.Field(i).Addr().Interface(), append(pathPrefix, nestedTag)); err != nil {
 				return err
 			}
 			continue
