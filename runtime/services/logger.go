@@ -3,20 +3,27 @@ package services
 import (
 	"log/slog"
 	"os"
-
-	"github.com/tim-oster/bespoke/runtime/slogctx"
 )
 
-func newLogger(level slog.Level, attrReplacer func(groups []string, a slog.Attr) slog.Attr) *slog.Logger {
+type logHandlerWrapper func(slog.Handler) slog.Handler
+
+func newLogger(level slog.Level, attrReplacer func(groups []string, a slog.Attr) slog.Attr, handlers []logHandlerWrapper) *slog.Logger {
 	levelVar := new(slog.LevelVar)
 	levelVar.Set(level)
 
-	h := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+	var h slog.Handler
+	h = slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		AddSource:   false,
 		Level:       levelVar,
 		ReplaceAttr: attrReplacer,
 	})
-	return slog.New(slogctx.NewHandler(h))
+
+	// reverse order to ensure that first handler is invoked first
+	for i := range handlers {
+		h = handlers[len(handlers)-i](h)
+	}
+
+	return slog.New(h)
 }
 
 func getLogLevel() slog.Level {

@@ -59,9 +59,19 @@ func makeOTelConfig(name string) (otelConfig, error) {
 	}, nil
 }
 
-func Run(name string, fn func(b *Bootstrapper) error) {
+func Run(name string, fn func(b *Bootstrapper) error, opts ...Option) {
+	so := serivceOptions{
+		logHandlerWrappers: []logHandlerWrapper{slogctx.NewHandler},
+	}
+	for _, opt := range opts {
+		err := opt(&so)
+		if err != nil {
+			slogFatal("failed to apply service option", err)
+		}
+	}
+
 	logFormat := httplog.SchemaGCP.Concise(false)
-	logger := newLogger(getLogLevel(), logFormat.ReplaceAttr).With(slog.String("service", name))
+	logger := newLogger(getLogLevel(), logFormat.ReplaceAttr, so.logHandlerWrappers).With(slog.String("service", name))
 	slog.SetDefault(logger)
 
 	slog.Info("starting service...")

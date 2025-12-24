@@ -12,23 +12,23 @@ import (
 	"strings"
 )
 
-type Option func(*configLoader) error
+type ConfigOption func(*configLoader) error
 
-func WithFileLoader(path string) Option {
+func WithFileLoader(path string) ConfigOption {
 	return func(loader *configLoader) error {
 		loader.secretsMountPath = path
 		return nil
 	}
 }
 
-func WithEnvPrefix(prefix string) Option {
+func WithEnvPrefix(prefix string) ConfigOption {
 	return func(loader *configLoader) error {
 		loader.envPrefix = prefix
 		return nil
 	}
 }
 
-func LoadConfig(dst any, opts ...Option) error {
+func LoadConfig(dst any, opts ...ConfigOption) error {
 	var loader configLoader
 	for _, opt := range opts {
 		if err := opt(&loader); err != nil {
