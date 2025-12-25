@@ -20,7 +20,7 @@ func newLogger(level slog.Level, attrReplacer func(groups []string, a slog.Attr)
 
 	// reverse order to ensure that first handler is invoked first
 	for i := range handlers {
-		h = handlers[len(handlers)-i](h)
+		h = handlers[len(handlers)-1-i](h)
 	}
 
 	return slog.New(h)
